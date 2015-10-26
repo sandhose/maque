@@ -1,0 +1,57 @@
+#!/bin/sh
+
+# Default options
+OPTS_MAKEFILE=`find . -name [Mm]akefile -maxdepth 1`
+OPTS_DRYRUN=false
+OPTS_KEEPGOING=false
+
+usage () {
+    cat <<EOL
+Usage: $(basename $0) [-f makefile] [-hkn] [target]
+Options:
+    -f FILE       Read FILE as a makefile
+    -h            Print this message and exit.
+    -k            Keep going when some targets can't be made.
+    -n            Don't actually run any commands; just print them
+EOL
+}
+
+parse_commandline () {
+    while getopts ":f:kn" ARG; do
+        case "$ARG" in
+            h)  usage
+                exit 0
+                ;;
+            f)  OPTS_MAKEFILE=$OPTARG
+                ;;
+            k)  OPTS_KEEPGOING=true
+                ;;
+            n)  OPTS_DRYRUN=true
+                ;;
+            \?) echo "Invalid option -$OPTARG"
+                ;;
+            *)  echo "$OPTERR"
+                ;;
+        esac
+    done
+
+    if [ ! -f $OPTS_MAKEFILE ]; then
+        echo "Makefile not found"
+        usage
+        exit 1
+    fi
+
+}
+
+parse_commandline $*
+
+echo "Running with options:
+Makefile: $OPTS_MAKEFILE
+Dry-run: $OPTS_DRYRUN
+Keep going: $OPTS_KEEPGOING"
+
+if $OPTS_DRYRUN; then
+    echo "Dry-run";
+fi
+
+# vim: ts=4:sw=4:et
