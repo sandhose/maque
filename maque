@@ -1,14 +1,14 @@
 #!/bin/sh
 
 # Default options
-OPTS_MAKEFILE=`find . -name [Mm]akefile -maxdepth 1`
+OPTS_MAKEFILE="`find . -name [Mm]akefile -maxdepth 1`"
 OPTS_DRYRUN=false
 OPTS_KEEPGOING=false
 
 # Show usage
 usage () {
     cat <<EOL
-Usage: $(basename $0) [-f makefile] [-hkn] [target]
+Usage: `basename $0` [-f makefile] [-hkn] [target]
 Options:
     -f FILE       Read FILE as a makefile
     -h            Print this message and exit.
@@ -28,7 +28,7 @@ init_tmpdir () {
 
 # Parse commandline options
 parse_commandline () {
-    while getopts ":f:kn" ARG; do
+    while getopts ":f:hkn" ARG; do
         case "$ARG" in
             h)  usage
                 exit 0
@@ -47,27 +47,28 @@ parse_commandline () {
     done
 
     # Testing makefile existence
-    if [ ! -f $OPTS_MAKEFILE ]; then
-        echo "Makefile not found"
-        usage >&2
-        exit 1
+    if [ ! -f $OPTS_MAKEFILE ] || [ -z $OPTS_MAKEFILE ]; then
+        echo "$(basename $0): *** No targets specified and no makefile found.  Stop." >&2
+        exit 2
     fi
-
 }
 
 # Parse makefile
 parse_makefile () {
     CURRENT_TARGET=""
-
-    # Remove comments, trailing whitespaces and empty lines
-    MK_CONTENT=`cat $1 | sed -e 's/#.*$//g' -e 's/[[:space:]]*$//' | grep -ve '^[[:space:]]*$'`
+    LINE_NB=0
 
     # Keep leading spaces/tabs in `read`
     OLDIFS=$IFS
     IFS=''
 
-    echo $MK_CONTENT | while read LINE; do
-        if [ ! -z $CURRENT_TARGET ] && (echo "$LINE" | grep -q ^'\t'); then
+    while read RAW_LINE; do
+        LINE=`echo $RAW_LINE | sed -e 's/#.*$//g' -e 's/[[:space:]]*$//'`
+        LINE_NB=$((LINE_NB + 1))
+        if [ -z $LINE ]; then
+            # Empty line, do nothing
+            continue
+        elif [ ! -z $CURRENT_TARGET ] && (echo "$LINE" | grep -q ^'\t'); then
             # Append commands to $CURRENT_TARGET commands file
             echo "$LINE" | sed 's/^[[:space:]]*\(.*\)$/\1/' >> $TDIR/$CURRENT_TARGET/commands
         elif (echo "$LINE" | grep -q '^[A-Za-z.]\+:\( [A-Za-z.]\+\)*$'); then
@@ -77,11 +78,10 @@ parse_makefile () {
             touch $TDIR/$CURRENT_TARGET/commands
             echo "$LINE" | sed 's/^[A-Za-z.]*: *//g' > $TDIR/$CURRENT_TARGET/dependencies
         else
-            # TODO: More explicit error
-            echo "Error while parsing Makefile" >&2
+            echo "$1:$LINE_NB: *** Error parsing makefile.  Stop." >&2
             exit 2
         fi
-    done
+    done < $1
 
     # Restore IFS
     IFS=$OLDIFS
@@ -90,6 +90,6 @@ parse_makefile () {
 # Run everything
 init_tmpdir
 parse_commandline $*
-parse_makefile $OPTS_MAKEFILE
+parse_makefile "$OPTS_MAKEFILE"
 
 # vim: ts=4:sw=4:et
