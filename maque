@@ -60,14 +60,13 @@ parse_makefile () {
     CURRENT_TARGET=""
 
     # Remove comments, trailing whitespaces and empty lines
-    # TODO: Use var instead of file
-    cat $1 | sed -e 's/#.*$//g' -e 's/[[:space:]]*$//' | grep -ve '^[[:space:]]*$' > $TDIR/makefile
+    MK_CONTENT=`cat $1 | sed -e 's/#.*$//g' -e 's/[[:space:]]*$//' | grep -ve '^[[:space:]]*$'`
 
     # Keep leading spaces/tabs in `read`
     OLDIFS=$IFS
     IFS=''
 
-    while read LINE; do
+    echo $MK_CONTENT | while read LINE; do
         if [ ! -z $CURRENT_TARGET ] && (echo "$LINE" | grep -q ^'\t'); then
             # Append commands to $CURRENT_TARGET commands file
             echo "$LINE" | sed 's/^[[:space:]]*\(.*\)$/\1/' >> $TDIR/$CURRENT_TARGET/commands
@@ -82,7 +81,7 @@ parse_makefile () {
             echo "Error while parsing Makefile" >&2
             exit 2
         fi
-    done < $TDIR/makefile
+    done
 
     # Restore IFS
     IFS=$OLDIFS
