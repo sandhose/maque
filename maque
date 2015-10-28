@@ -4,6 +4,7 @@
 OPTS_MAKEFILE="`find . -name [Mm]akefile -maxdepth 1`"
 OPTS_DRYRUN=false
 OPTS_KEEPGOING=false
+OPTS_TARGETS=""
 
 # Show usage
 usage () {
@@ -28,27 +29,33 @@ init_tmpdir () {
 
 # Parse commandline options
 parse_commandline () {
-    while getopts ":f:hkn" ARG; do
-        case "$ARG" in
-            h)  usage
+    args=`getopt "f:hkn" $*`
+
+    if [ $? != 0 ]; then
+        usage >&2
+        exit 2
+    fi
+
+    set -- $args
+    for i; do
+        case "$i" in
+            -h) usage
                 exit 0
-                ;;
-            f)  OPTS_MAKEFILE=$OPTARG
-                ;;
-            k)  OPTS_KEEPGOING=true
-                ;;
-            n)  OPTS_DRYRUN=true
-                ;;
-            \?) echo "Invalid option -$OPTARG"
-                ;;
-            *)  echo "$OPTERR"
-                ;;
+                shift;;
+            -f) OPTS_MAKEFILE=$2
+                shift 2;;
+            -k) OPTS_KEEPGOING=true
+                shift;;
+            -n) OPTS_DRYRUN=true
+                shift;;
+            --) shift
+                break;;
         esac
     done
 
     # Testing makefile existence
     if [ ! -f $OPTS_MAKEFILE ] || [ -z $OPTS_MAKEFILE ]; then
-        echo "$(basename $0): *** No targets specified and no makefile found.  Stop." >&2
+        echo "$(basename $0): *** Makefile not found.  Stop." >&2
         exit 2
     fi
 }
@@ -56,6 +63,7 @@ parse_commandline () {
 # Parse makefile
 parse_makefile () {
     CURRENT_TARGET=""
+    DEFAULT_TARGET=""
     LINE_NB=0
 
     # Keep leading spaces/tabs in `read`
@@ -71,12 +79,16 @@ parse_makefile () {
         elif [ ! -z $CURRENT_TARGET ] && (echo "$LINE" | grep -q ^'\t'); then
             # Append commands to $CURRENT_TARGET commands file
             echo "$LINE" | sed 's/^[[:space:]]*\(.*\)$/\1/' >> $TDIR/$CURRENT_TARGET/commands
-        elif (echo "$LINE" | grep -q '^[A-Za-z.]\+:\( [A-Za-z.]\+\)*$'); then
+        elif (echo "$LINE" | grep -q '^.\+:\( .\+\)*$'); then
             # Change $CURRENT_TARGET and add dependencies in file
             CURRENT_TARGET=`echo $LINE | cut -d ':' -f 1`
             mkdir $TDIR/$CURRENT_TARGET
             touch $TDIR/$CURRENT_TARGET/commands
-            echo "$LINE" | sed 's/^[A-Za-z.]*: *//g' > $TDIR/$CURRENT_TARGET/dependencies
+            echo "$LINE" | sed 's/^.*: *//g' > $TDIR/$CURRENT_TARGET/dependencies
+
+            if [ -z $DEFAULT_TARGET ]; then
+                DEFAULT_TARGET=$CURRENT_TARGET
+            fi
         else
             echo "$1:$LINE_NB: *** Error parsing makefile.  Stop." >&2
             exit 2
