@@ -6,6 +6,8 @@ OPTS_DRYRUN=false
 OPTS_KEEPGOING=false
 OPTS_TARGETS=""
 
+DEBUG=false
+
 # Show usage
 usage () {
     cat <<EOL
@@ -109,6 +111,7 @@ parse_makefile () {
 
 INDENT=""
 
+# @returns: 0 = nothing done ; 1 = target just built ; 2 = error
 build_target_if_needed () {
     local TARGET=$1
     local NEED_BUILD=false
@@ -118,26 +121,27 @@ build_target_if_needed () {
 
     if [ -d $TDIR/$TARGET ]; then
         # Debugging
-        echo "${INDENT}Building target \`$TARGET'"
+        $DEBUG && echo "${INDENT}Building target \`$TARGET'"
         INDENT=$INDENT"  "
 
         if ! [ -f $TARGET ]; then
-            echo "${INDENT} --> file inexistant"
+            $DEBUG && echo "${INDENT} --> file inexistant"
             NEED_BUILD=true
         fi
 
         if [ -s $TDIR/$TARGET/dependencies ]; then
             DEPS=`cat $TDIR/$TARGET/dependencies`
             build_targets $DEPS
-            if [ $? -eq 1 ]; then
-                NEED_BUILD=true
-                echo "${INDENT} --> deps built"
-            fi
+            case $? in
+                1) NEED_BUILD=true;;
+                2) INDENT=`echo "$INDENT" | cut -c 3-`
+                    return 2;; # Deps build failed
+            esac
 
             if ! $NEED_BUILD; then # Target already built ; check if update needed
                 NEWER_DEPS=$(find $DEPS -newer $TARGET)
                 if [ -n "$NEWER_DEPS" ]; then
-                    echo "${INDENT} --> Newer files"
+                    $DEBUG && echo "${INDENT} --> Newer files"
                     NEED_BUILD=true
                 fi
             fi
@@ -146,30 +150,36 @@ build_target_if_needed () {
         INDENT=`echo "$INDENT" | cut -c 3-`
 
         if $NEED_BUILD; then
-            echo "${INDENT}Need to build $TARGET"
-            return 1
+            $DEBUG && echo "${INDENT}Need to build $TARGET"
+            return 1 # We actually did something!
         else
-            echo "${INDENT}Target \`$TARGET' already up to date"
+            $DEBUG && echo "${INDENT}Target \`$TARGET' already up to date"
             return 0 # Already up to date
         fi
 
         return 1 # Target was built
     elif ! [ -f $TARGET ]; then
-        echo "$0: *** No rule to make \`$TARGET'.  Stop." >&2
-        exit 2
+        if ! [ -z $PARENT_TARGET ]; then
+            echo "`basename $0`: *** No rule to make target \`$TARGET', needed by \`$PARENT_TARGET'.  Stop." >&2
+        else
+            echo "`basename $0`: *** No rule to make target \`$TARGET'.  Stop." >&2
+        fi
+        return 2
     else
         return 0 # Can't build but file exists
     fi
 }
 
 build_targets () {
+    local PARENT_TARGET=$TARGET # Expose parent target
     local TARGET
     local WAS_BUILT=0
     for TARGET; do
         build_target_if_needed $TARGET
-        if [ $? -eq 1 ]; then
-            WAS_BUILT=1
-        fi
+        case $? in
+            1) WAS_BUILT=1;;
+            2) return 2;; # Target errored
+        esac
     done
 
     return $WAS_BUILT
