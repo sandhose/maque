@@ -58,16 +58,19 @@ parse_commandline () {
         echo "$(basename $0): *** Makefile not found.  Stop." >&2
         exit 2
     fi
+
+    OPTS_TARGETS=$*
 }
 
 # Parse makefile
 parse_makefile () {
-    CURRENT_TARGET=""
-    DEFAULT_TARGET=""
-    LINE_NB=0
+    local CURRENT_TARGET=""
+    local DEFAULT_TARGET=""
+    local LINE_NB=0
+    local LINE
 
     # Keep leading spaces/tabs in `read`
-    OLDIFS=$IFS
+    local OLDIFS=$IFS
     IFS=''
 
     while read RAW_LINE; do
@@ -82,7 +85,7 @@ parse_makefile () {
         elif (echo "$LINE" | grep -q '^.\+:\( .\+\)*$'); then
             # Change $CURRENT_TARGET and add dependencies in file
             CURRENT_TARGET=`echo $LINE | cut -d ':' -f 1`
-            mkdir $TDIR/$CURRENT_TARGET
+            mkdir -p $TDIR/$CURRENT_TARGET
             touch $TDIR/$CURRENT_TARGET/commands
             echo "$LINE" | sed 's/^.*: *//g' > $TDIR/$CURRENT_TARGET/dependencies
 
@@ -97,11 +100,85 @@ parse_makefile () {
 
     # Restore IFS
     IFS=$OLDIFS
+
+    # Set default target if no target specified
+    if [ -z "$OPTS_TARGETS" ]; then
+        OPTS_TARGETS=$DEFAULT_TARGET
+    fi
+}
+
+INDENT=""
+
+build_target_if_needed () {
+    local TARGET=$1
+    local NEED_BUILD=false
+    local WAS_DEPS_BUILT
+    local NEWER_DEPS
+    local FIND_EXPR
+
+    if [ -d $TDIR/$TARGET ]; then
+        # Debugging
+        echo "${INDENT}Building target \`$TARGET'"
+        INDENT=$INDENT"  "
+
+        if ! [ -f $TARGET ]; then
+            echo "${INDENT} --> file inexistant"
+            NEED_BUILD=true
+        fi
+
+        if [ -s $TDIR/$TARGET/dependencies ]; then
+            DEPS=`cat $TDIR/$TARGET/dependencies`
+            build_targets $DEPS
+            if [ $? -eq 1 ]; then
+                NEED_BUILD=true
+                echo "${INDENT} --> deps built"
+            fi
+
+            if ! $NEED_BUILD; then # Target already built ; check if update needed
+                NEWER_DEPS=$(find $DEPS -newer $TARGET)
+                if [ -n "$NEWER_DEPS" ]; then
+                    echo "${INDENT} --> Newer files"
+                    NEED_BUILD=true
+                fi
+            fi
+        fi
+
+        INDENT=`echo "$INDENT" | cut -c 3-`
+
+        if $NEED_BUILD; then
+            echo "${INDENT}Need to build $TARGET"
+            return 1
+        else
+            echo "${INDENT}Target \`$TARGET' already up to date"
+            return 0 # Already up to date
+        fi
+
+        return 1 # Target was built
+    elif ! [ -f $TARGET ]; then
+        echo "$0: *** No rule to make \`$TARGET'.  Stop." >&2
+        exit 2
+    else
+        return 0 # Can't build but file exists
+    fi
+}
+
+build_targets () {
+    local TARGET
+    local WAS_BUILT=0
+    for TARGET; do
+        build_target_if_needed $TARGET
+        if [ $? -eq 1 ]; then
+            WAS_BUILT=1
+        fi
+    done
+
+    return $WAS_BUILT
 }
 
 # Run everything
 init_tmpdir
 parse_commandline $*
 parse_makefile "$OPTS_MAKEFILE"
+build_targets $OPTS_TARGETS
 
 # vim: ts=4:sw=4:et
