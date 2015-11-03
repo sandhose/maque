@@ -146,7 +146,7 @@ build_target_if_needed () {
         indent_debug
 
         if ! [ -f $TARGET ]; then
-            debug "--> File inexistant"
+            debug "--> File doesn't exists"
             NEED_BUILD=true
         fi
 
@@ -173,7 +173,12 @@ build_target_if_needed () {
         if $NEED_BUILD; then
             debug "Need to build \`$TARGET'"
             run_commands_in_file $TDIR/$TARGET/commands
-            return 1 # We actually did something!
+
+            if [ $? -eq 1 ]; then
+                return 2 # Command failed
+            else
+                return 1 # We actually did something!
+            fi
         else
             debug "Target \`$TARGET' already up to date"
             return 0 # Already up to date
@@ -211,9 +216,20 @@ build_targets () {
 # Run commands
 run_commands_in_file () {
     local IFS=''
+    local RESULT
     while read CMD; do
         echo "$CMD"
+        if ! $OPTS_DRYRUN; then
+            sh -c "$CMD"
+            RESULT=$?
+            if [ $RESULT -ne 0 ] && ! $OPTS_KEEPGOING; then
+                error "[$TARGET] Error $RESULT"
+                return 1
+            fi
+        fi
     done < $1
+
+    return 0
 }
 
 # Run everything
