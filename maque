@@ -17,8 +17,28 @@ Options:
     -h            Print this message and exit.
     -k            Keep going when some targets can't be made.
     -n            Don't actually run any commands; just print them
+    -v            Verbose mode
 EOL
 }
+
+# Log functions
+log () {
+    if [ -z $2 ]; then
+        LOC=$(basename $0)
+    else
+        LOC=$2
+    fi
+
+    echo "$LOC: $1"
+}
+error () { log "*** $1" $2 >&2; }
+fatal () { error "$1  Stop" $2; }
+
+# Debug functions
+DEBUG_INDENT=""
+debug () { $DEBUG && echo '\033[90m'"${DEBUG_INDENT}$1"'\033[0m'; }
+indent_debug () { DEBUG_INDENT="${DEBUG_INDENT}  "; }
+shift_debug () { DEBUG_INDENT=`echo "$DEBUG_INDENT" | cut -c 3-`; }
 
 # Create tempdir
 init_tmpdir () {
@@ -31,7 +51,7 @@ init_tmpdir () {
 
 # Parse commandline options
 parse_commandline () {
-    args=`getopt "f:hkn" $*`
+    args=`getopt "f:hknv" $*`
 
     if [ $? != 0 ]; then
         usage >&2
@@ -50,6 +70,8 @@ parse_commandline () {
                 shift;;
             -n) OPTS_DRYRUN=true
                 shift;;
+            -v) DEBUG=true
+                shift;;
             --) shift
                 break;;
         esac
@@ -57,7 +79,7 @@ parse_commandline () {
 
     # Testing makefile existence
     if [ ! -f $OPTS_MAKEFILE ] || [ -z $OPTS_MAKEFILE ]; then
-        echo "$(basename $0): *** Makefile not found.  Stop." >&2
+        fatal "Makefile not found."
         exit 2
     fi
 
@@ -95,7 +117,7 @@ parse_makefile () {
                 DEFAULT_TARGET=$CURRENT_TARGET
             fi
         else
-            echo "$1:$LINE_NB: *** Error parsing makefile.  Stop." >&2
+            fatal "Error parsing makefile." "$1:$LINE_NB"
             exit 2
         fi
     done < $1
@@ -109,7 +131,6 @@ parse_makefile () {
     fi
 }
 
-INDENT=""
 
 # @returns: 0 = nothing done ; 1 = target just built ; 2 = error
 build_target_if_needed () {
@@ -121,11 +142,11 @@ build_target_if_needed () {
 
     if [ -d $TDIR/$TARGET ]; then
         # Debugging
-        $DEBUG && echo "${INDENT}Building target \`$TARGET'"
-        INDENT=$INDENT"  "
+        debug "Building target \`$TARGET'"
+        indent_debug
 
         if ! [ -f $TARGET ]; then
-            $DEBUG && echo "${INDENT} --> file inexistant"
+            debug "--> File inexistant"
             NEED_BUILD=true
         fi
 
@@ -133,36 +154,37 @@ build_target_if_needed () {
             DEPS=`cat $TDIR/$TARGET/dependencies`
             build_targets $DEPS
             case $? in
-                1) NEED_BUILD=true;;
-                2) INDENT=`echo "$INDENT" | cut -c 3-`
+                1)  NEED_BUILD=true;;
+                2)  shift_debug
                     return 2;; # Deps build failed
             esac
 
             if ! $NEED_BUILD; then # Target already built ; check if update needed
                 NEWER_DEPS=$(find $DEPS -newer $TARGET)
                 if [ -n "$NEWER_DEPS" ]; then
-                    $DEBUG && echo "${INDENT} --> Newer files"
+                    debug "--> Newer files"
                     NEED_BUILD=true
                 fi
             fi
         fi
 
-        INDENT=`echo "$INDENT" | cut -c 3-`
+        shift_debug
 
         if $NEED_BUILD; then
-            $DEBUG && echo "${INDENT}Need to build $TARGET"
+            debug "Need to build \`$TARGET'"
+            run_commands_in_file $TDIR/$TARGET/commands
             return 1 # We actually did something!
         else
-            $DEBUG && echo "${INDENT}Target \`$TARGET' already up to date"
+            debug "Target \`$TARGET' already up to date"
             return 0 # Already up to date
         fi
 
         return 1 # Target was built
     elif ! [ -f $TARGET ]; then
         if ! [ -z $PARENT_TARGET ]; then
-            echo "`basename $0`: *** No rule to make target \`$TARGET', needed by \`$PARENT_TARGET'.  Stop." >&2
+            fatal "No rule to make target \`$TARGET', needed by \`$PARENT_TARGET'."
         else
-            echo "`basename $0`: *** No rule to make target \`$TARGET'.  Stop." >&2
+            fatal "No rule to make target \`$TARGET'."
         fi
         return 2
     else
@@ -170,6 +192,7 @@ build_target_if_needed () {
     fi
 }
 
+# Build multiple targets
 build_targets () {
     local PARENT_TARGET=$TARGET # Expose parent target
     local TARGET
@@ -183,6 +206,14 @@ build_targets () {
     done
 
     return $WAS_BUILT
+}
+
+# Run commands
+run_commands_in_file () {
+    local IFS=''
+    while read CMD; do
+        echo "$CMD"
+    done < $1
 }
 
 # Run everything
