@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Default options
-OPTS_MAKEFILE="`find . -name [Mm]akefile -maxdepth 1`"
+OPTS_MAKEFILE="`find . -maxdepth 1 -name [Mm]akefile`"
 OPTS_DRYRUN=false
 OPTS_KEEPGOING=false
 OPTS_TARGETS=""
@@ -103,7 +103,7 @@ parse_makefile () {
         if [ -z $LINE ]; then
             # Empty line, do nothing
             continue
-        elif [ ! -z $CURRENT_TARGET ] && (echo "$LINE" | grep -q ^'\t'); then
+        elif [ ! -z $CURRENT_TARGET ] && (echo "$LINE" | grep -q "^$(printf '\t')"); then
             # Append commands to $CURRENT_TARGET commands file
             echo "$LINE" | sed 's/^[[:space:]]*\(.*\)$/\1/' >> $TDIR/$CURRENT_TARGET/commands
         elif (echo "$LINE" | grep -q '^.\+:\( .\+\)*$'); then
@@ -136,9 +136,7 @@ parse_makefile () {
 build_target_if_needed () {
     local TARGET=$1
     local NEED_BUILD=false
-    local WAS_DEPS_BUILT
     local NEWER_DEPS
-    local FIND_EXPR
 
     if [ -d $TDIR/$TARGET ]; then
         # Debugging
@@ -152,7 +150,8 @@ build_target_if_needed () {
 
         if [ -s $TDIR/$TARGET/dependencies ]; then
             DEPS=`cat $TDIR/$TARGET/dependencies`
-            build_targets $DEPS
+            # `eval` is needed to correctly expand $DEPS as multiple arguments
+            eval build_targets $DEPS
             case $? in
                 1)  NEED_BUILD=true;;
                 2)  shift_debug
@@ -160,7 +159,7 @@ build_target_if_needed () {
             esac
 
             if ! $NEED_BUILD; then # Target already built ; check if update needed
-                NEWER_DEPS=$(find $DEPS -newer $TARGET)
+                NEWER_DEPS=$(eval find $DEPS -newer $TARGET) # `eval` to expand $DEPS
                 if [ -n "$NEWER_DEPS" ]; then
                     debug "--> Newer files"
                     NEED_BUILD=true
