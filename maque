@@ -165,6 +165,8 @@ build_target_if_needed () {
                     NEED_BUILD=true
                 fi
             fi
+        else
+            NEED_BUILD=true # No dependencies, build anyway
         fi
 
         shift_debug
@@ -204,6 +206,10 @@ build_targets () {
     for TARGET; do
         build_target_if_needed $TARGET
         case $? in
+            0) if [ -z "$PARENT_TARGET" ]; then
+                log "'$TARGET' is up to date."
+            fi;;
+
             1) WAS_BUILT=1;;
             2) return 2;; # Target errored
         esac
